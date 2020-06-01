@@ -1,0 +1,93 @@
+server:
+  port: 12580
+
+spring:
+  application:
+    name: Zuul-Gateway
+# 传统配置就是手动指定服务的转发地址，如在yml中配置：
+#zuul:
+#  routes:
+#    api-a:
+#      path: /api-a/**
+#      url: http://localhost:8082
+# 通过上面的配置，所有符合/api-a/**规则的访问都将被路由转发到http://localhost:8082/地址上，即当我们向服务网关访问http://localhost:12580/api-a/hello请求的时候，请求将被转发到http://localhost:8082/hello服务上
+# 传统的配置方式不便之处在于需要知道服务的具体地址和端口号等信息，我们可以借助Eureka来实现通过服务名称配置路由。
+
+# 配置基于服务名称的路由
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    serviceUrl:  # 指定Eureka服务端的地址，这里为上面定义的Eureka服务端地址
+      defaultZone: http://localhost:8080/eureka/
+      # ,http://localhost:8081/eureka/
+zuul:
+  routes:
+    api-a:
+      path: /api-b/**
+      serviceId: server-provider
+    api-b:
+      path: /api-c/**
+      serviceId: server-provider-two
+# 本地跳转: Zuul网关除了支持将服务转发到各个微服务上之外，还支持将服务跳转到网关本身的服务上，配置:
+# 访问 http://localhost:12580/gateway/api-e/zuul 会走本地方法
+    api-e:
+      path: /api-e/**
+      url: forward:/test
+################################################
+    #  头部过滤 & 重定向
+    # 在使用Zuul网关的时候你可能会遇到Cookie丢失的情况，这是因为默认情况下Zuul会过滤掉HTTP请求头中的一些敏感信息，这些敏感信息通过下面的配置设定：
+#   sensitive-headers: Cookie,Set-Cookie,Authorization # 想关闭这个默认配置，通过设置全局参数为空来覆盖默认值
+    # 想关闭某个路由的HTTP请求头过滤，可以这样
+    # api-e:
+    #      path: /api-e/**
+    #      url: forward:/test
+    #      sensitive-headers:
+
+#   add-host-header: true # 重定向
+###############################################
+# 配置简化
+#zuul:
+#  routes:
+#    server-provider:
+#      path: /api-b/**
+#    server-provider-two:
+#      path: /api-c/**
+#  ignored-services: * 关闭所有默认路由配置规则 默认会用serviceId作为path
+
+# 优先级问题：1./api-b/** 2./api-c/user/** 请求来了谁在前面就用谁
+
+# 前缀配置
+  prefix: /gateway # 通过Zuul网关获取服务的时候，路径也得加上这个前缀，如http://localhost:12580/gateway/api-b/test/hello
+
+###############################################
+# 过滤器
+# 4种过滤器处于不同的生命周期，所以其职责也各不相同：
+#
+# PRE：PRE过滤器用于将请求路径与配置的路由规则进行匹配，以找到需要转发的目标地址，并做一些前置加工，比如请求的校验等；
+#
+# ROUTING：ROUTING过滤器用于将外部请求转发到具体服务实例上去；
+#
+# POST：POST过滤器用于将微服务的响应信息返回到客户端，这个过程种可以对返回数据进行加工处理；
+#
+# ERROR：上述的过程发生异常后将调用ERROR过滤器。ERROR过滤器捕获到异常后需要将异常信息返回给客户端，所以最终还是会调用POST过滤器。
+# Spring Cloud Zuul为各个生命周期阶段实现了一批过滤器:
+#  生命周期	优先级	      过滤器	                       功能描述
+#  pre	     -3	    ServletDetectionFilter	     标记处理Servlet的类型
+#  pre	     -2	    Servlet30WrapperFilter	     包装HttpServletRequest请求
+#  pre	     -1	    FormBodyWrapperFilter	     包装请求体
+#  route	 1	    DebugFilter         	     标记调试标志
+#  route	 5	    PreDecorationFilter	         处理请求上下文供后续使用
+#  route	 10	    RibbonRoutingFilter	         serviceId请求转发
+#  route	 100	SimpleHostRoutingFilter	     url请求转发
+#  route	 500	SendForwardFilter	         forward请求转发
+#  post	     0	    SendErrorFilter	             处理有错误的请求响应
+#  post	     1000	SendResponseFilter	         处理正常的请求响应
+
+#  其中优先级数字越小，优先级越高。
+#  关闭某个 过滤器：
+# zuul:
+#  SendResponseFilter:
+#    post:
+#      disable:
+#        true
